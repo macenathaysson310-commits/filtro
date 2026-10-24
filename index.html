@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pesquisa</title>
+<style>
+  :root{--bg:#f3f5f2;--card:#fff;--tx:#1d2521;--mu:#5d6b64;--ac:#1f6f5c;--bd:#d5ddd8}
+  @media (prefers-color-scheme:dark){:root{--bg:#141a17;--card:#1d2521;--tx:#e9efeb;--mu:#9baba3;--ac:#4fc3a1;--bd:#33403a}}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.5 Georgia,serif;background:var(--bg);color:var(--tx);padding:16px;max-width:720px;margin-inline:auto}
+  h1{font-size:1.5rem;margin:.2em 0}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:12px 0}
+  label{display:block;font:600 .95rem system-ui,sans-serif;margin:.8em 0 .3em}
+  input[type=text],textarea,button{font:inherit;font-size:.95rem;width:100%;padding:8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx)}
+  button{background:var(--ac);color:#fff;border:0;cursor:pointer;margin-top:12px}
+  button:disabled{opacity:.5}
+  .mu{color:var(--mu);font:.85rem system-ui,sans-serif}
+  .ck{display:flex;gap:8px;align-items:flex-start;font:.85rem system-ui,sans-serif;margin-top:12px}
+  .ck input{margin-top:4px}
+  .hp{position:absolute;left:-9999px}
+  #msg{font:600 .95rem system-ui,sans-serif;margin-top:10px}
+</style>
+</head>
+<body>
+<h1 id="titulo"></h1>
+<p class="mu" id="intro"></p>
+
+<form class="card" id="form" autocomplete="off">
+  <label for="nome">Seu nome (opcional)</label>
+  <input type="text" id="nome" maxlength="80">
+  <div id="perguntas"></div>
+  <input class="hp" type="text" id="site" tabindex="-1" aria-hidden="true">
+  <div class="ck"><input type="checkbox" id="aceite">
+    <span>Concordo que minhas respostas sejam enviadas ao responsável pela pesquisa.</span></div>
+  <button type="submit" id="enviar">Enviar respostas</button>
+  <div id="msg" role="status"></div>
+</form>
+
+<script>
+/* =====================================================
+   CONFIGURAÇÃO — edite só esta parte
+   ===================================================== */
+const CONFIG = {
+  titulo: "Título da sua pesquisa",
+  intro:  "Responda com suas palavras. Não existe resposta certa.",
+  // URL gerada pelo Google Apps Script (veja o arquivo Code.gs)
+  endpoint: "",
+  // Palavras do tema da pesquisa: quanto mais aparecem na resposta,
+  // maior a relevância. Troque pelas palavras do SEU tema.
+  palavrasChave: ["inteligencia artificial","ia","aprendizagem","estudo","aluno",
+                  "professor","escola","tecnologia","ensino","conhecimento"]
+};
+
+// Para criar uma nova pergunta, adicione uma linha aqui.
+const PERGUNTAS = [
+  {id:"p1", texto:"Como você usa a tecnologia para aprender?"},
+  {id:"p2", texto:"Quais vantagens e problemas você enxerga nisso?"},
+  {id:"p3", texto:"O que poderia melhorar na sua escola ou no seu estudo?"}
+];
+
+/* =====================================================
+   ANÁLISE AUTOMÁTICA
+   Cada função é independente: para mudar um critério,
+   edite só a função dele. Para criar outro, adicione a
+   função e inclua o resultado em analisar().
+   ===================================================== */
+const limpar = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+const palavras = t => limpar(t).split(/[^a-z0-9]+/).filter(Boolean);
+
+function ehBrincadeira(t){
+  const m=[], L=limpar(t), P=palavras(t);
+  if(/k{3,}|(ha){2,}|(he){2,}|rs{2,}|\blol\b|zoeira|brincadeira|kkk/.test(L)) m.push("risadas/gíria de brincadeira");
+  if(/(.)\1{4,}/.test(L)) m.push("letras repetidas");
+  if(/[\u{1F602}\u{1F923}\u{1F61C}\u{1F92A}]/u.test(t)) m.push("emojis de piada");
+  const letras=L.replace(/[^a-z]/g,"");
+  if(letras.length>6 && (letras.replace(/[^aeiou]/g,"").length/letras.length)<0.25) m.push("texto sem sentido");
+  if(P.length && new Set(P).size/P.length<0.4 && P.length>5) m.push("palavras repetidas");
+  return m;
+}
+
+function complexidade(t){
+  const P=palavras(t); if(!P.length) return "Simples";
+  const conect=/\b(porque|portanto|embora|entretanto|contudo|no entanto|pois|apesar|enquanto|logo|assim|alem disso|por isso)\b/g;
+  const frases=t.split(/[.!?]+/).filter(s=>s.trim().length>2).length;
+  const media=P.join("").length/P.length;
+  let pts=0;
+  if(P.length>=40) pts++;
+  if(media>=5.5) pts++;
+  if(frases>=3) pts++;
+  if((limpar(t).match(conect)||[]).length>=2) pts++;
+  return pts>=2 ? "Complexa" : "Simples";
+}
+
+function relevancia(t, brincadeira){
+  const L=" "+palavras(t).join(" ")+" ";
+  const achou=CONFIG.palavrasChave.filter(k=>L.includes(" "+limpar(k)+" ")).length;
+  let n=Math.min(5, 1+achou);
+  if(palavras(t).length<4) n=1;
+  if(brincadeira) n=Math.max(1,n-2);
+  return n;
+}
+
+function veracidade(t, motivos){
+  if(palavras(t).length<3) return "Sem conteúdo";
+  if(motivos.length>=1) return "Provável brincadeira";
+  const indicios=/\b(segundo|pesquisa|estudo|dados|exemplo|porque|percent|por cento)\b|\d/.test(limpar(t));
+  return indicios ? "Plausível (com indícios)" : "Não verificada";
+}
+
+function analisar(texto){
+  const motivos=ehBrincadeira(texto);
+  const ver=veracidade(texto,motivos);
+  const rel=relevancia(texto, ver==="Provável brincadeira");
+  const ajuda = (rel>=4 && ver!=="Provável brincadeira") ? "Sim"
+              : (rel>=2 && ver!=="Provável brincadeira" && ver!=="Sem conteúdo") ? "Em parte" : "Não";
+  return {complexidade:complexidade(texto), veracidade:ver, relevancia:rel, ajuda, motivos:motivos.join("; ")};
+}
+
+/* =====================================================
+   INTERFACE E ENVIO
+   ===================================================== */
+const $=id=>document.getElementById(id);
+$("titulo").textContent=CONFIG.titulo;
+$("intro").textContent=CONFIG.intro;
+$("perguntas").innerHTML=PERGUNTAS.map(p=>
+  `<label for="${p.id}">${p.texto}</label><textarea id="${p.id}" rows="3" maxlength="2000"></textarea>`).join("");
+
+$("form").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const msg=$("msg");
+  if(!$("aceite").checked){ msg.textContent="Marque a caixa de concordância para enviar."; return; }
+  const respostas=PERGUNTAS.map(p=>{
+    const r=$(p.id).value.trim();
+    return r ? {pergunta:p.texto, resposta:r, ...analisar(r)} : null;
+  }).filter(Boolean);
+  if(!respostas.length){ msg.textContent="Responda pelo menos uma pergunta."; return; }
+  if(!CONFIG.endpoint){ msg.textContent="// Cole este código em Planilha Google > Extensões > Apps Script.
+// Depois: Implantar > Nova implantação > Aplicativo da Web
+//   Executar como: Eu | Quem tem acesso: Qualquer pessoa
+// Copie a URL gerada e cole em CONFIG.endpoint no index.html.
+
+const EMAIL = "seu@email.com";   // deixe "" para não receber e-mail
+const ABA = "Respostas";
+const CABECALHO = ["data","respondente","pergunta","resposta",
+                   "complexidade","veracidade","relevancia","ajuda","motivos"];
+
+// Evita que uma resposta começando com = + - @ vire fórmula na planilha
+function seguro(v){
+  v = String(v == null ? "" : v).slice(0, 2000);
+  return /^[=+\-@]/.test(v) ? "'" + v : v;
+}
+
+function doPost(e){
+  try{
+    const d = JSON.parse(e.postData.contents);
+    if (d.site) return ContentService.createTextOutput("ok"); // anti-robô
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const aba = ss.getSheetByName(ABA) || ss.insertSheet(ABA);
+    if (aba.getLastRow() === 0) aba.appendRow(CABECALHO);
+
+    const nome = seguro(d.nome || "anônimo");
+    const linhas = (d.respostas || []).slice(0, 20).map(r => [
+      new Date(), nome, seguro(r.pergunta), seguro(r.resposta),
+      seguro(r.complexidade), seguro(r.veracidade),
+      Number(r.relevancia) || 0, seguro(r.ajuda), seguro(r.motivos)
+    ]);
+    if (linhas.length)
+      aba.getRange(aba.getLastRow()+1, 1, linhas.length, CABECALHO.length).setValues(linhas);
+
+    // Aviso por e-mail só das respostas relevantes e não-brincadeira
+    const boas = linhas.filter(l => l[6] >= 4 && l[5] !== "Provável brincadeira");
+    if (EMAIL && boas.length)
+      MailApp.sendEmail(EMAIL, "Nova resposta relevante na pesquisa",
+        boas.map(l => l[2] + "\n" + l[3]).join("\n\n"));
+
+    return ContentService.createTextOutput("ok");
+  }catch(err){
+    return ContentService.createTextOutput("erro");
+  }
+}
+"; console.log(respostas); return; }
+  $("enviar").disabled=true; msg.textContent="Enviando...";
+  try{
+    await fetch(CONFIG.endpoint,{method:"POST",mode:"no-cors",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body:JSON.stringify({nome:$("nome").value.trim(), site:$("site").value, respostas})});
+    msg.textContent="Respostas enviadas. Obrigado por participar!";
+    $("form").reset();
+  }catch(err){
+    msg.textContent="Não foi possível enviar. Tente de novo."; 
+  }
+  $("enviar").disabled=false;
+});
+</script>
+</body>
+</html>
