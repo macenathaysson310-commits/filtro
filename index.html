@@ -45,7 +45,7 @@ const CONFIG = {
   titulo: "Título da sua pesquisa",
   intro:  "Responda com suas palavras. Não existe resposta certa.",
   // URL gerada pelo Google Apps Script (veja o arquivo Code.gs)
-  endpoint: "",
+  endpoint: "https://script.google.com/macros/s/AKfycbxnhXE2_0qVuMHhbsqjwuSA7Kds-sQsMwt6CRVc6PeM0IT2mcQe1SyamH1Es57UBLf8/exec",
   // Palavras do tema da pesquisa: quanto mais aparecem na resposta,
   // maior a relevância. Troque pelas palavras do SEU tema.
   palavrasChave: ["inteligencia artificial","ia","aprendizagem","estudo","aluno",
@@ -135,52 +135,7 @@ $("form").addEventListener("submit", async e=>{
     return r ? {pergunta:p.texto, resposta:r, ...analisar(r)} : null;
   }).filter(Boolean);
   if(!respostas.length){ msg.textContent="Responda pelo menos uma pergunta."; return; }
-  if(!CONFIG.endpoint){ msg.textContent="// Cole este código em Planilha Google > Extensões > Apps Script.
-// Depois: Implantar > Nova implantação > Aplicativo da Web
-//   Executar como: Eu | Quem tem acesso: Qualquer pessoa
-// Copie a URL gerada e cole em CONFIG.endpoint no index.html.
-
-const EMAIL = "seu@email.com";   // deixe "" para não receber e-mail
-const ABA = "Respostas";
-const CABECALHO = ["data","respondente","pergunta","resposta",
-                   "complexidade","veracidade","relevancia","ajuda","motivos"];
-
-// Evita que uma resposta começando com = + - @ vire fórmula na planilha
-function seguro(v){
-  v = String(v == null ? "" : v).slice(0, 2000);
-  return /^[=+\-@]/.test(v) ? "'" + v : v;
-}
-
-function doPost(e){
-  try{
-    const d = JSON.parse(e.postData.contents);
-    if (d.site) return ContentService.createTextOutput("ok"); // anti-robô
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const aba = ss.getSheetByName(ABA) || ss.insertSheet(ABA);
-    if (aba.getLastRow() === 0) aba.appendRow(CABECALHO);
-
-    const nome = seguro(d.nome || "anônimo");
-    const linhas = (d.respostas || []).slice(0, 20).map(r => [
-      new Date(), nome, seguro(r.pergunta), seguro(r.resposta),
-      seguro(r.complexidade), seguro(r.veracidade),
-      Number(r.relevancia) || 0, seguro(r.ajuda), seguro(r.motivos)
-    ]);
-    if (linhas.length)
-      aba.getRange(aba.getLastRow()+1, 1, linhas.length, CABECALHO.length).setValues(linhas);
-
-    // Aviso por e-mail só das respostas relevantes e não-brincadeira
-    const boas = linhas.filter(l => l[6] >= 4 && l[5] !== "Provável brincadeira");
-    if (EMAIL && boas.length)
-      MailApp.sendEmail(EMAIL, "Nova resposta relevante na pesquisa",
-        boas.map(l => l[2] + "\n" + l[3]).join("\n\n"));
-
-    return ContentService.createTextOutput("ok");
-  }catch(err){
-    return ContentService.createTextOutput("erro");
-  }
-}
-"; console.log(respostas); return; }
+  if(!CONFIG.endpoint){ msg.textContent="site ainda sem destino configurado (CONFIG.endpoint)."; console.log(respostas); return; }
   $("enviar").disabled=true; msg.textContent="Enviando...";
   try{
     await fetch(CONFIG.endpoint,{method:"POST",mode:"no-cors",
